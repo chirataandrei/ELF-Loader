@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <elf.h>
 
 void *map_elf(const char *filename)
 {
@@ -39,11 +40,17 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 	// Contents of the ELF file are in the buffer: elf_contents[x] is the x-th byte of the ELF file.
 	void *elf_contents = map_elf(filename);
 
-	/**
-	 * TODO: ELF Header Validation
-	 * Validate ELF magic bytes - "Not a valid ELF file" + exit code 3 if invalid.
-	 * Validate ELF class is 64-bit (ELFCLASS64) - "Not a 64-bit ELF" + exit code 4 if invalid.
-	 */
+	Elf64_Ehdr *header = (Elf64_Ehdr *) elf_contents;
+	if (header->e_ident[0] != 0x7f || header->e_ident[1] != 'E' || header->e_ident[2] != 'L' || header->e_ident[3] != 'F') {
+		fprintf(stderr, "Not a valid ELF file");
+		exit(3);
+	}
+
+	if (header->e_ident[4] != ELFCLASS64) {
+		fprintf(stderr, "Not a 64-bit ELF");
+		exit(4);
+	}
+	
 
 	/**
 	 * TODO: Load PT_LOAD segments
