@@ -40,6 +40,7 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 	// Contents of the ELF file are in the buffer: elf_contents[x] is the x-th byte of the ELF file.
 	void *elf_contents = map_elf(filename);
 
+	// Verify if the file is ELF64
 	Elf64_Ehdr *header = (Elf64_Ehdr *) elf_contents;
 	if (header->e_ident[0] != 0x7f || header->e_ident[1] != 'E' || header->e_ident[2] != 'L' || header->e_ident[3] != 'F') {
 		fprintf(stderr, "Not a valid ELF file");
@@ -51,13 +52,29 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 		exit(4);
 	}
 	
-
 	/**
 	 * TODO: Load PT_LOAD segments
 	 * For minimal syscall-only binaries.
 	 * For each PT_LOAD segment:
 	 * - Map the segments in memory. Permissions can be RWX for now.
 	 */
+	Elf64_Phdr *phdr = (Elf64_Phdr *) ((char *) elf_contents + header->e_phoff);
+	int page_size = getpagesize();
+	for (size_t i = 0; i < header->e_phnum; i++) {
+		if (phdr[i].p_type == PT_LOAD) {
+			void *vaddr = (void *)phdr[i].p_vaddr;
+			int filesz = phdr[i].p_filesz;
+			int memsz = phdr[i].p_memsz;
+			int offset = phdr[i].p_offset;
+			void *aligned = vaddr - ((long long)vaddr % page_size);
+			void *mem = mmap(aligned + load_base, memsz + (vaddr - aligned), PROT_EXEC | PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+
+			memcpy(vaddr + load_base, (char *)elf_contents + offset, filesz);
+			if (memsz > filesz) {
+				memset((char *)vaddr + load_base + filesz, 0, memsz - filesz);
+			}
+		}
+ 	}
 
 	/**
 	 * TODO: Load Memory Regions with Correct Permissions
