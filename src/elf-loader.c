@@ -158,7 +158,68 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 	}
 
 	// find AT_PHDR
-	
+	uintptr_t at_phdr = 0;
+	for (size_t i = 0; i < header->e_phnum; i++) {
+		if (phdr[i].p_type == PT_LOAD) {
+			if (header->e_phoff >= phdr[i].p_offset && header->e_phoff < phdr[i].p_offset + phdr[i].p_filesz) {
+				at_phdr = phdr[i].p_vaddr + (header->e_phoff - phdr[i].p_offset);
+				break;
+			}
+		}
+	}
+
+	typedef struct {
+		uint64_t key, value;
+	} aux_entry_t;
+
+	aux_entry_t aux[] = {
+        {AT_PHDR, at_phdr},
+        {AT_PHENT, header->e_phentsize},
+        {AT_PHNUM, header->e_phnum},
+        {AT_PAGESZ, page_size},
+        {AT_RANDOM, (uint64_t)random_bytes},
+        {AT_EXECFN, (uint64_t)argv_addr[0]},
+        {AT_ENTRY, load_base + header->e_entry},
+        {AT_NULL, 0}
+    };
+    size_t auxc = sizeof(aux) / sizeof(aux[0]);
+
+	// calculate total words for alignment
+	size_t total = 1 + argc + 1 + envc + 1 + auxc * 2;
+	// aligned at 16 bytes 
+	p = (char *)((uintptr_t)p & ~0xFULL);
+	uint64_t *st = (uint64_t *)p;
+
+	if (total % 2 != 0) {
+		st--;
+		*st = 0;
+	}
+
+	for (size_t i = auxc - 1; i >= 0; i--) {
+		st--;
+		*st = aux[i].val;
+		st--;
+		*st = aux[i].key;
+	}
+	st--;
+	*st = (uint64_t)0;
+
+	for (size_t i = envc - 1; i >= 0; i--) {
+		st--;
+		*st = (uint64_t)env_addr[i];
+	}
+	st--;
+	*st = (uint64_t)0;
+
+	for (size_t i = argc - 1; i >= 0; i--) {
+		st--;
+		*st = (uint64_t)argv_addr[i];
+	}
+
+	st--;
+	*st = (uint64_t)argc;
+	p = (void *)st;
+
 
 	/**
 	 * TODO: Support Static PIE Executables
