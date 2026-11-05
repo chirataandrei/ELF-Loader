@@ -103,8 +103,44 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 			mprotect(aligned + load_base, memsz + (vaddr - aligned), prot);
 		}
 	}
+	
+	 /**
+	 * TODO: Support Static PIE Executables
+	 * Map PT_LOAD segments at a random load base.
+	 * Adjust virtual addresses of segments and entry point by load_base.
+	 * Stack setup (argc, argv, envp, auxv) same as above.
+	 */
 
-	/**
+	uintptr_t load_base = 0;
+	if (header->e_type == ET_DYN) {
+		uintptr_t minn = (uintptr_t)-1;
+		uintptr_t maxx = 0;
+
+		for (size_t i = 0; i < header->e_phnum; i++) {
+			if (phdr[i].p_type == PT_LOAD) {
+				uintptr_t start = phdr[i].p_vaddr & ~(page_size - 1);
+				uintptr_t end = (phdr[i].p_vaddr + phdr[i].p_memsz + page_size - 1) & ~(page_size - 1);
+
+				if (start < minn) {
+					minn = start;
+				}
+				if (end > maxx) {
+					maxx = end;
+				}
+			}
+		}
+
+		size_t total = maxx - minn;
+		void *base = (NULL, total, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (base == MAP_FAILED) {
+			perror("mmap pie based");
+			exit(1);
+		}
+
+		load_base(uintptr_t)base - minn;
+	}
+ 
+	 /**
 	 * TODO: Support Static Non-PIE Binaries with libc
 	 * Must set up a valid process stack, including:
 	 *	- argc, argv, envp
@@ -194,7 +230,7 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 		st--;
 		*st = 0;
 	}
-
+	
 	for (size_t i = auxc - 1; i >= 0; i--) {
 		st--;
 		*st = aux[i].val;
@@ -203,30 +239,24 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 	}
 	st--;
 	*st = (uint64_t)0;
-
+	
 	for (size_t i = envc - 1; i >= 0; i--) {
 		st--;
 		*st = (uint64_t)env_addr[i];
 	}
 	st--;
 	*st = (uint64_t)0;
-
+	
 	for (size_t i = argc - 1; i >= 0; i--) {
 		st--;
 		*st = (uint64_t)argv_addr[i];
 	}
-
+	
 	st--;
 	*st = (uint64_t)argc;
 	p = (void *)st;
+	
 
-
-	/**
-	 * TODO: Support Static PIE Executables
-	 * Map PT_LOAD segments at a random load base.
-	 * Adjust virtual addresses of segments and entry point by load_base.
-	 * Stack setup (argc, argv, envp, auxv) same as above.
-	 */
 
 	// TODO: Set the entry point and the stack pointer
 	void (*entry)() = NULL;
