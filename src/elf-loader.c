@@ -67,11 +67,11 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 			int memsz = phdr[i].p_memsz;
 			int offset = phdr[i].p_offset;
 			void *aligned = vaddr - ((long long)vaddr % page_size);
-			void *mem = mmap(aligned + load_base, memsz + (vaddr - aligned), PROT_EXEC | PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+			void *mem = mmap(aligned, memsz + (vaddr - aligned), PROT_EXEC | PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
 
-			memcpy(vaddr + load_base, (char *)elf_contents + offset, filesz);
+			memcpy(vaddr, (char *)elf_contents + offset, filesz);
 			if (memsz > filesz) {
-				memset((char *)vaddr + load_base + filesz, 0, memsz - filesz);
+				memset((char *)vaddr + filesz, 0, memsz - filesz);
 			}
 		}
  	}
@@ -82,6 +82,27 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 	 *	- Set memory permissions according to program header p_flags (PF_R, PF_W, PF_X).
 	 *	- Use mprotect() or map with the correct permissions directly using mmap().
 	 */
+
+	for (size_t i = 0; i < header->e_phnum; i++) {
+		if (phdr[i].p_type == PT_LOAD) {
+			void *vaddr = (void *)phdr[i].p_vaddr;
+			int memsz = phdr[i].p_memsz;
+			void *aligned = vaddr - ((long long)vaddr % page_size);
+			int prot = 0;
+
+			if (phdr[i].p_flags & PF_X) {
+				prot = prot | PROT_EXEC;
+			}
+			if (phdr[i].p_flags & PF_W) {
+				prot = prot | PROT_WRITE;
+			}
+			if (phdr[i].p_flags & PF_R) {
+				prot = prot | PROT_READ;
+			}
+
+			mprotect(aligned + load_base, memsz + (vaddr - aligned), prot);
+		}
+	}
 
 	/**
 	 * TODO: Support Static Non-PIE Binaries with libc
