@@ -174,7 +174,7 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 
 	char *envp_addr[envc];
 	for (size_t i = 0; i < envc; i++) {
-		size_t len = strlen(argv[i]) + 1;
+		size_t len = strlen(envp[i]) + 1;
 		p -= len;
 		memcpy(p, envp[i], len);
 		envp_addr[i] = p;
@@ -198,7 +198,7 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 	for (size_t i = 0; i < header->e_phnum; i++) {
 		if (phdr[i].p_type == PT_LOAD) {
 			if (header->e_phoff >= phdr[i].p_offset && header->e_phoff < phdr[i].p_offset + phdr[i].p_filesz) {
-				at_phdr = phdr[i].p_vaddr + (header->e_phoff - phdr[i].p_offset);
+				at_phdr = load_base + phdr[i].p_vaddr + (header->e_phoff - phdr[i].p_offset);
 				break;
 			}
 		}
@@ -213,7 +213,7 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
         {AT_PHENT, header->e_phentsize},
         {AT_PHNUM, header->e_phnum},
         {AT_PAGESZ, page_size},
-        {AT_RANDOM, (uint64_t)random_bytes},
+        {AT_RANDOM, (uint64_t)rdn_bytes},
         {AT_EXECFN, (uint64_t)argv_addr[0]},
         {AT_ENTRY, load_base + header->e_entry},
         {AT_NULL, 0}
@@ -231,35 +231,39 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 		*st = 0;
 	}
 	
-	for (size_t i = auxc - 1; i >= 0; i--) {
+	for (int i = auxc - 1; i >= 0; i--) {
 		st--;
-		*st = aux[i].val;
+		*st = aux[i].value;
 		st--;
 		*st = aux[i].key;
 	}
 	st--;
 	*st = (uint64_t)0;
 	
-	for (size_t i = envc - 1; i >= 0; i--) {
+	for (int i = envc - 1; i >= 0; i--) {
 		st--;
-		*st = (uint64_t)env_addr[i];
+		*st = (uint64_t)envp_addr[i];
 	}
 	st--;
 	*st = (uint64_t)0;
 	
-	for (size_t i = argc - 1; i >= 0; i--) {
+	for (int i = argc - 1; i >= 0; i--) {
 		st--;
 		*st = (uint64_t)argv_addr[i];
 	}
 	
 	st--;
 	*st = (uint64_t)argc;
-	p = (void *)st;
+	sp = (void *)st;
 	
-
-
 	// TODO: Set the entry point and the stack pointer
-	void (*entry)() = NULL;
+	uintptr_t entry_addr = (uintptr_t)ehdr->e_entry;
+
+	if (ehdr->e_type == ET_DYN) {
+		entry_addr = entry_addr + load_base;
+	}
+
+	void (*entry)() = (void (*)())entry_addr;
 
 	// Transfer control
 	__asm__ __volatile__(
