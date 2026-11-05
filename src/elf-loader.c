@@ -112,6 +112,53 @@ void load_and_run(const char *filename, int argc, char **argv, char **envp)
 	 * Note: Beware of the AT_RANDOM, AT_PHDR entries, the application will crash if you do not set them up properly.
 	 */
 	void *sp = NULL;
+	size_t stack_size = 8 * 1024 * 1024;
+	void *stack = mmap(NULL, stack_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (stack == MAP_FAILED) {
+		perror("mmap stack");
+		exit(1);
+	}
+
+	char *p = (char *)stack + stack_size;
+
+	// copy argv strings
+	char *argv_addr[argc];
+	for (size_t i = 0; i < argc; i++) {
+		size_t len = strlen(argv[i]) + 1;
+		p -= len;
+		memcpy(p, argv[i], len);
+		argv_addr[i] = p;
+	}
+	
+	// copy envp strings
+	size_t envc = 0;
+	while (envp[envc] != NULL) {
+		envc++;
+	}
+
+	char *envp_addr[envc];
+	for (size_t i = 0; i < envc; i++) {
+		size_t len = strlen(argv[i]) + 1;
+		p -= len;
+		memcpy(p, envp[i], len);
+		envp_addr[i] = p;
+	}
+
+	// alloc buffer for AT_RANDOM
+	p -= 16;
+	void *rdn_bytes = (void *)p;
+	int rnd_fd = open("/dev/urandom", O_RDONLY);
+	if (rnd_fd >= 0) {
+		if (read(rnd_fd, rnd_bytes, 16) != 16) {
+			memset(rdn_bytes, 0x41, 16);
+		}
+		close(rnd_fd);
+	} else {
+		memset(rdn_bytes, 0x41, 16);
+	}
+
+	// find AT_PHDR
+	
 
 	/**
 	 * TODO: Support Static PIE Executables
